@@ -308,25 +308,87 @@ a {{ color:#175cd3; }}
 .a4 table {{ margin-bottom:8px; }}
 .print-page {{ break-after: page; page-break-after: always; }}
 .print-page:last-child {{ break-after: auto; page-break-after: auto; }}
+
+/* A4 sheet containing two identical half-A4 certificates */
+.certificate-a4-sheet {{
+  width:210mm;
+  height:297mm;
+  max-width:100%;
+  background:#fff;
+  color:#111;
+  margin:0 auto;
+  padding:0;
+}}
 .medcert {{
-  width:210mm; min-height:297mm; max-width:100%;
-  background:white; color:#111; margin:0 auto; padding:15mm 18mm;
-  border:1px solid #ddd; font-family:"Noto Sans Thai",Tahoma,sans-serif;
+  box-sizing:border-box;
+  width:210mm;
+  height:148.5mm;
+  max-width:100%;
+  overflow:hidden;
+  background:white;
+  color:#111;
+  margin:0;
+  padding:6mm 10mm;
+  border:1px solid #ddd;
+  font-family:"Noto Sans Thai",Tahoma,sans-serif;
 }}
-.medcert h1 {{ text-align:center; font-size:21pt; margin:0 0 4mm; }}
-.medcert .center {{ text-align:center; }}
-.medcert p {{ font-size:14pt; line-height:1.75; margin:2mm 0; }}
+.medcert-copy-1, .medcert-copy-2 {{
+  width:210mm;
+  height:148.5mm;
+  margin:0;
+  padding:0;
+}}
+.medcert-copy-1 {{
+  border-bottom:1px dashed #777;
+}}
+.medcert h1 {{
+  text-align:center;
+  font-size:16.5pt;
+  line-height:1.05;
+  margin:0 0 1.5mm;
+}}
+.medcert .center {{
+  text-align:center;
+}}
+.medcert p {{
+  font-size:10.8pt;
+  line-height:1.28;
+  margin:0.7mm 0;
+}}
 .medcert .line {{
-  display:inline-block; border-bottom:1px dotted #333; min-width:42mm;
-  min-height:1.2em; vertical-align:baseline; padding:0 2mm;
+  display:inline-block;
+  border-bottom:1px dotted #333;
+  min-width:35mm;
+  min-height:1em;
+  vertical-align:baseline;
+  padding:0 1mm;
 }}
-.medcert .line-long {{ min-width:92mm; }}
-.medcert .line-short {{ min-width:28mm; }}
+.medcert .line-long {{ min-width:74mm; }}
+.medcert .line-short {{ min-width:23mm; }}
 .medcert .signature-grid {{
-  display:grid; grid-template-columns:1fr 1fr; gap:18mm; margin-top:16mm;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10mm;
+  margin-top:4mm;
 }}
-.medcert .signature-box {{ text-align:center; font-size:13pt; line-height:1.7; }}
-.medcert .footer-note {{ margin-top:16mm; font-size:11.5pt; }}
+.medcert .signature-box {{
+  text-align:center;
+  font-size:10.2pt;
+  line-height:1.25;
+}}
+.medcert .footer-note {{
+  margin-top:3mm;
+  font-size:8.7pt;
+  line-height:1.2;
+}}
+.cut-note {{
+  position:relative;
+  height:0;
+  text-align:center;
+  font-size:8pt;
+  color:#666;
+  z-index:2;
+}}
 @media(max-width:720px) {{
   .grid,.grid3 {{ grid-template-columns:1fr; }}
   .wrap {{ padding:10px; }}
@@ -338,8 +400,23 @@ a {{ color:#175cd3; }}
   .wrap {{ max-width:none; padding:0; }}
   .card {{ border:0; box-shadow:none; padding:0; margin:0; }}
   .a4 {{ border:0; width:210mm; min-height:297mm; padding:10mm 12mm; }}
-  .medcert {{ border:0; width:210mm; min-height:297mm; padding:15mm 18mm; }}
-  @page {{ size:A4; margin:0; }}
+  .certificate-a4-sheet {{ width:210mm; height:297mm; margin:0; padding:0; }}
+  .medcert {{
+    border-left:0;
+    border-right:0;
+    width:210mm;
+    height:148.5mm;
+    min-height:148.5mm;
+    padding:6mm 10mm;
+  }}
+  .medcert-copy-1, .medcert-copy-2 {{
+    width:210mm;
+    height:148.5mm;
+    overflow:hidden;
+  }}
+  .medcert-copy-1 {{ border-top:0; border-bottom:1px dashed #777; }}
+  .medcert-copy-2 {{ border-bottom:0; }}
+  @page {{ size:A4 portrait; margin:0; }}
 }}
 </style>
 {extra_head}
@@ -605,22 +682,56 @@ def format_datetime(value):
 
 
 def thai_date_from_timestamp(value):
-    try:
-        parsed = datetime.fromisoformat(str(value))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=BKK)
-        parsed = parsed.astimezone(BKK)
-        months = [
-            "", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-            "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-        ]
-        return f"{parsed.day} {months[parsed.month]} {parsed.year + 543}"
-    except Exception:
-        return ""
+    """Return Thai Buddhist-calendar date from a Bangkok/ISO timestamp."""
+    raw = str(value or "").strip()
+    parsed = None
+
+    if raw:
+        # Accept normal ISO timestamps and timestamps ending in Z.
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+        # Also tolerate common date/time strings if data came from an older CSV.
+        if parsed is None:
+            for fmt in (
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+                "%Y-%m-%d",
+                "%d/%m/%Y %H:%M:%S",
+                "%d/%m/%Y %H:%M",
+                "%d/%m/%Y",
+            ):
+                try:
+                    parsed = datetime.strptime(raw, fmt)
+                    break
+                except Exception:
+                    continue
+
+    # The issue date must not disappear on the printed certificate.
+    # created_at_bkk is used by the caller; this fallback is only for malformed/legacy rows.
+    if parsed is None:
+        parsed = now_bkk()
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=BKK)
+    parsed = parsed.astimezone(BKK)
+
+    months = [
+        "", "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+        "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+    ]
+    return f"{parsed.day} {months[parsed.month]} {parsed.year + 543}"
 
 
 def medical_certificate_content(row):
-    issue_date = thai_date_from_timestamp(row.get("created_at_bkk", ""))
+    issue_timestamp = (
+        row.get("created_at_bkk", "")
+        or row.get("updated_at_bkk", "")
+        or now_bkk().isoformat()
+    )
+    issue_date = thai_date_from_timestamp(issue_timestamp)
     patient_name = f"{row.get('first_name','')} {row.get('last_name','')}".strip()
     citizen_id = row.get("citizen_id", "")
     return f"""
@@ -630,8 +741,7 @@ def medical_certificate_content(row):
     <b>สถานพยาบาลมหาวิทยาลัยเกษตรศาสตร์ วิทยาเขตกำแพงแสน</b><br>
     เลขที่ 1 หมู่ 6 ต.กำแพงแสน อ.กำแพงแสน จ.นครปฐม 73140
   </p>
-
-  <p style="text-align:right">วันที่ <span class="line line-short">{esc(issue_date)}</span></p>
+  <p style="text-align:right"><b>วันที่</b> <span class="line">{esc(issue_date)}</span></p>
 
   <p>
     ข้าพเจ้า <span class="line">นายแพทย์กำธร ตันติวิทยาทันต์</span>
@@ -1117,12 +1227,14 @@ def print_record(request: Request, record_id: str):
       <a class="btn light" href="/registry/{esc(record_id)}">กลับ</a>
     </div>
     <p class="small">
-      พิมพ์ทั้งหมด 3 หน้า A4: เวชระเบียน OPD 1 หน้า และใบรับรองแพทย์ที่เหมือนกัน 2 ใบ
-      เพื่อซ้อนกับกระดาษ Carbon copy แล้วเขียนข้อมูลบนใบแรกเพียงครั้งเดียว
+      พิมพ์ทั้งหมด 2 แผ่น A4: แผ่นแรกเป็นเวชระเบียน OPD และแผ่นที่สองมี
+      ใบรับรองแพทย์ขนาดครึ่ง A4 จำนวน 2 ใบ สำหรับตัดแล้วซ้อนกับกระดาษ Carbon copy
     </p>
   </div>
   <div class="print-page">{a4_content(row)}</div>
-  <div class="print-page">{medical_certificate_content(row)}</div>
-  <div class="print-page">{medical_certificate_content(row)}</div>
+  <div class="print-page certificate-a4-sheet">
+    <div class="medcert-copy-1">{medical_certificate_content(row)}</div>
+    <div class="medcert-copy-2">{medical_certificate_content(row)}</div>
+  </div>
 </div>"""
     return HTMLResponse(html_page(f"OPD {record_id}", body))
